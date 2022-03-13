@@ -7,13 +7,13 @@
 
 
 ## Usage
-pngrip [DESTINATION] [PATH]...
+pngrip [DESTINATION] [FILES]...
 
 where DESTINATION is the path to the existing or non-existing directory where ripped images will be delivered
 
 and
 
-PATH... are paths to the files to rip images from
+FILES... are paths to the files to rip images from
 
 
 ## Examples
