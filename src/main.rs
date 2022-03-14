@@ -13,6 +13,92 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 use std::io::{Read, Write};
 use std::path::Path;
 
+/// extracts png images from file that path points to, saving every image to destination directory.
+/// If an error occurs - returns immediately.
+fn rip_png(path: &Path, destination: &Path) {
+    let png_identifier: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
+    let iend_identifier: [u8; 4] = [73, 69, 78, 68];
+
+    let filename;
+    match path.file_name() {
+        Some(name) => {
+            filename = String::from(name.to_string_lossy());
+        }
+        None => {
+            eprintln!("[ERROR] Could not get filename from \"{}\"", path.display());
+            return;
+        }
+    }
+
+    println!("[INFO] Ripping PNGs from \"{}\"...", filename);
+
+    let mut file;
+    match std::fs::File::open(path) {
+        Ok(f) => {
+            file = f;
+        }
+
+        Err(e) => {
+            eprintln!("[ERROR] On opening \"{}\": {}", filename, e);
+            return;
+        }
+    }
+
+    let mut file_bytes: Vec<u8> = Vec::new();
+    match file.read_to_end(&mut file_bytes) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("[ERROR] On reading \"{}\": {}", filename, e);
+            return;
+        }
+    }
+
+    let mut image_count: u64 = 0;
+
+    let mut start_pos: usize = 0;
+    let mut last_pos: usize = 0;
+    let mut end_pos: usize = 0;
+    for i in 0..file_bytes.len()-iend_identifier.len() {
+        if i < file_bytes.len() - png_identifier.len() - iend_identifier.len()
+            && file_bytes[i..i + png_identifier.len()] == png_identifier {
+            start_pos = i;
+        }
+
+        if file_bytes[i..i + iend_identifier.len()] == iend_identifier {
+            end_pos = i + iend_identifier.len();
+        }
+
+        if start_pos < end_pos && start_pos != last_pos {
+            last_pos = start_pos;
+            image_count += 1;
+            // println!("[INFO] Found PNG at {}->{} ({} bytes)", start_pos, end_pos, end_pos - start_pos);
+
+            let mut ripped_image_file;
+            let ripped_image_filename = format!("{}_{}.png", filename, image_count);
+            match std::fs::File::create(destination.join(&ripped_image_filename)) {
+                Ok(f) => {
+                    ripped_image_file = f;
+                }
+                Err(e) => {
+                    eprintln!("[ERROR] On creating \"{}\": {}", &ripped_image_filename, e);
+                    return;
+                }
+            }
+
+            match ripped_image_file.write_all(&mut file_bytes[start_pos..end_pos]) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("[ERROR] On writing to \"{}\": {}", ripped_image_filename, e);
+                    return;
+                }
+            }
+        }
+    }
+
+
+    println!("[INFO] Ripped {} images from \"{}\" in total", image_count, filename);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
@@ -44,8 +130,6 @@ fn main() {
 
 
     // go through all files and try to rip all PNGs
-    let png_identifier: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
-    let iend_identifier: [u8; 4] = [73, 69, 78, 68];
     for file_to_check in &args[2..] {
         let path = Path::new(file_to_check);
         if !path.exists() {
@@ -53,84 +137,7 @@ fn main() {
             continue;
         }
 
-        let filename;
-        match path.file_name() {
-            Some(name) => {
-                filename = name.to_string_lossy();
-            }
-            None => {
-                eprintln!("[ERROR] Could not get filename from \"{}\"", file_to_check);
-                continue;
-            }
-        }
-
-        println!("[INFO] Ripping PNGs from \"{}\"...", filename);
-
-        let mut file;
-        match std::fs::File::open(path) {
-            Ok(f) => {
-                file = f;
-            }
-
-            Err(e) => {
-                eprintln!("[ERROR] On opening \"{}\": {}", filename, e);
-                continue;
-            }
-        }
-
-        let mut file_bytes: Vec<u8> = Vec::new();
-        match file.read_to_end(&mut file_bytes) {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("[ERROR] On reading \"{}\": {}", filename, e);
-                continue;
-            }
-        }
-
-        let mut image_count: u64 = 0;
-
-        let mut start_pos: usize = 0;
-        let mut last_pos: usize = 0;
-        let mut end_pos: usize = 0;
-        for i in 0..file_bytes.len()-8 {
-
-            if file_bytes[i..i + png_identifier.len()] == png_identifier {
-                start_pos = i;
-            }
-
-            if file_bytes[i..i + iend_identifier.len()] == iend_identifier {
-                end_pos = i + iend_identifier.len();
-            }
-
-            if start_pos < end_pos && start_pos != last_pos {
-                last_pos = start_pos;
-                image_count += 1;
-                // println!("[INFO] Found PNG at {}->{} ({} bytes)", start_pos, end_pos, end_pos - start_pos);
-
-                let mut ripped_image_file;
-                let ripped_image_filename = format!("{}_{}.png", filename, image_count);
-                match std::fs::File::create(destination.join(&ripped_image_filename)) {
-                    Ok(f) => {
-                        ripped_image_file = f;
-                    }
-                    Err(e) => {
-                        eprintln!("[ERROR] On creating \"{}\": {}", &ripped_image_filename, e);
-                        continue;
-                    }
-                }
-
-                match ripped_image_file.write_all(&mut file_bytes[start_pos..end_pos]) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        eprintln!("[ERROR] On writing to \"{}\": {}", ripped_image_filename, e);
-                        continue;
-                    }
-                }
-            }
-        }
-
-
-        println!("[INFO] Ripped {} images in total", image_count);
+        rip_png(path, destination);
     }
 
 }
