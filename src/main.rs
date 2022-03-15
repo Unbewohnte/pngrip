@@ -58,9 +58,8 @@ fn rip_png(path: &Path, destination: &Path) {
     let mut start_pos: usize = 0;
     let mut last_pos: usize = 0;
     let mut end_pos: usize = 0;
-    for i in 0..file_bytes.len()-iend_identifier.len() {
-        if i < file_bytes.len() - png_identifier.len() - iend_identifier.len()
-            && file_bytes[i..i + png_identifier.len()] == png_identifier {
+    for i in 0..file_bytes.len()-png_identifier.len() {
+        if file_bytes[i..i + png_identifier.len()] == png_identifier {
             start_pos = i;
         }
 
