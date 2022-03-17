@@ -58,10 +58,13 @@ fn rip_png(path: &Path, destination: &Path) {
     let mut start_pos: usize = 0;
     let mut last_pos: usize = 0;
     let mut end_pos: usize = 0;
-    for i in 0..file_bytes.len()-png_identifier.len() {
-        if file_bytes[i..i + png_identifier.len()] == png_identifier {
-            start_pos = i;
+    for i in 0..file_bytes.len()-iend_identifier.len() {
+        if i < file_bytes.len() - png_identifier.len() {
+            if file_bytes[i..i + png_identifier.len()] == png_identifier {
+                start_pos = i;
+            }
         }
+
 
         if file_bytes[i..i + iend_identifier.len()] == iend_identifier {
             end_pos = i + iend_identifier.len();
@@ -70,7 +73,6 @@ fn rip_png(path: &Path, destination: &Path) {
         if start_pos < end_pos && start_pos != last_pos {
             last_pos = start_pos;
             image_count += 1;
-            // println!("[INFO] Found PNG at {}->{} ({} bytes)", start_pos, end_pos, end_pos - start_pos);
 
             let mut ripped_image_file;
             let ripped_image_filename = format!("{}_{}.png", filename, image_count);
@@ -93,7 +95,6 @@ fn rip_png(path: &Path, destination: &Path) {
             }
         }
     }
-
 
     println!("[INFO] Ripped {} images from \"{}\" in total", image_count, filename);
 }
