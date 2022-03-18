@@ -102,7 +102,7 @@ fn rip_png(path: &Path, destination: &Path) {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        println!("USAGE: pngrip [DESTINATION] [FILES]...");
+        println!("pngrip v0.1.2\nUSAGE: pngrip [DESTINATION] [FILES]...");
         std::process::exit(0);
     }
 
