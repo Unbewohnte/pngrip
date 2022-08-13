@@ -13,115 +13,78 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 use std::io::{Read, Write};
 use std::path::Path;
 
-/// extracts png images from file that path points to, saving every image to destination directory.
-/// If an error occurs - returns immediately.
-fn rip_png(path: &Path, destination: &Path) {
-    let png_identifier: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
-    let iend_identifier: [u8; 4] = [73, 69, 78, 68];
+#[derive(Debug)]
+struct Position {
+    start: usize,
+    end: usize,
+}
 
-    let filename;
-    match path.file_name() {
-        Some(name) => {
-            filename = String::from(name.to_string_lossy());
-        }
-        None => {
-            eprintln!("[ERROR] Could not get filename from \"{}\"", path.display());
-            return;
-        }
+// Reads data from specified start_index position,
+// if valid png bytes were found - returns exact positions of an image
+fn rip_png(data: &[u8], start_index: usize) -> Option<Position> {
+    const PNG_IDENTIFIER: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0xD, 0xA, 0x1A, 0xA];
+    const PNG_END_IDENTIFIER: [u8; 8] = [0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82];
+
+    if data.len() < PNG_IDENTIFIER.len() + PNG_END_IDENTIFIER.len() ||
+        start_index + PNG_IDENTIFIER.len() + PNG_END_IDENTIFIER.len() > data.len() {
+        return None;
     }
 
-    println!("[INFO] Ripping PNGs from \"{}\"...", filename);
+    let mut position: Position = Position{
+        start: usize::MAX,
+        end: usize::MAX,
+    };
 
-    let mut file;
-    match std::fs::File::open(path) {
-        Ok(f) => {
-            file = f;
-        }
-
-        Err(e) => {
-            eprintln!("[ERROR] On opening \"{}\": {}", filename, e);
-            return;
-        }
-    }
-
-    let mut file_bytes: Vec<u8> = Vec::new();
-    match file.read_to_end(&mut file_bytes) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("[ERROR] On reading \"{}\": {}", filename, e);
-            return;
-        }
-    }
-
-    let mut image_count: u64 = 0;
-
-    let mut start_pos: usize = 0;
-    let mut last_pos: usize = 0;
-    let mut end_pos: usize = 0;
-    for i in 0..file_bytes.len()-iend_identifier.len() {
-        if i < file_bytes.len() - png_identifier.len() {
-            if file_bytes[i..i + png_identifier.len()] == png_identifier {
-                start_pos = i;
+    for i in start_index..data.len() {
+        // start index
+        if i < data.len() - PNG_IDENTIFIER.len() && position.start == usize::MAX {
+            if data[i..i + PNG_IDENTIFIER.len()] == PNG_IDENTIFIER {
+                position.start = i;
             }
         }
 
-
-        if file_bytes[i..i + iend_identifier.len()] == iend_identifier {
-            end_pos = i + iend_identifier.len();
+        // end index
+        if i <= data.len() - PNG_END_IDENTIFIER.len() && position.end == usize::MAX {
+            if data[i..i + PNG_END_IDENTIFIER.len()] == PNG_END_IDENTIFIER {
+                position.end = i + PNG_END_IDENTIFIER.len();
+            }
         }
 
-        if start_pos < end_pos && start_pos != last_pos {
-            last_pos = start_pos;
-            image_count += 1;
-
-            let mut ripped_image_file;
-            let ripped_image_filename = format!("{}_{}.png", filename, image_count);
-            match std::fs::File::create(destination.join(&ripped_image_filename)) {
-                Ok(f) => {
-                    ripped_image_file = f;
-                }
-                Err(e) => {
-                    eprintln!("[ERROR] On creating \"{}\": {}", &ripped_image_filename, e);
-                    return;
-                }
-            }
-
-            match ripped_image_file.write_all(&mut file_bytes[start_pos..end_pos]) {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("[ERROR] On writing to \"{}\": {}", ripped_image_filename, e);
-                    return;
-                }
-            }
+        if position.start != usize::MAX && position.end != usize::MAX {
+            break;
         }
     }
 
-    println!("[INFO] Ripped {} images from \"{}\" in total", image_count, filename);
+    if position.start == usize::MAX || position.end == usize::MAX || position.end <= position.start {
+        return None;
+    }
+
+    return Some(position);
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        println!("pngrip v0.1.2\nUSAGE: pngrip [DESTINATION] [FILES]...");
+        println!("pngrip v0.1.3\nUSAGE: pngrip [DESTINATION] [FILES]...");
         std::process::exit(0);
     }
 
     // handle DESTINATION argument
-    let mut destination = Path::new(&args[1]);
-    match destination.exists() {
+    let mut destination_path = Path::new(&args[1]);
+    match destination_path.exists() {
         true => {
-            if !destination.is_dir() {
+            if !destination_path.is_dir() {
                 // destination exists, but is not a directory
-                destination = Path::new(".");
+                destination_path = Path::new(".");
                 eprintln!("[ERROR] Provided destination path is not a directory ! Saving to current directory...");
             }
         }
         false => {
             // destination does not exist, create it
-            match std::fs::create_dir_all(&destination) {
+            match std::fs::create_dir_all(&destination_path) {
                 Ok(_) => {}
                 Err(e) => {
-                    destination = Path::new(".");
+                    destination_path = Path::new(".");
                     eprintln!("[ERROR] Could not create destination directory: {}. Saving to current directory...", e);
                 }
             }
@@ -130,14 +93,107 @@ fn main() {
 
 
     // go through all files and try to rip all PNGs
-    for file_to_check in &args[2..] {
-        let path = Path::new(file_to_check);
-        if !path.exists() {
-            eprintln!("[ERROR] \"{}\" does not exist", file_to_check);
+    for file_path_index in 0..args[2..].len() {
+        let file_path: &Path = Path::new(&args[file_path_index]);
+
+        print!("\n");
+
+        if !file_path.exists() {
+            println!("[ERROR] \"{}\" does not exist", file_path.display());
             continue;
         }
 
-        rip_png(path, destination);
+        // get file's metadata
+        let file_metadata: std::fs::Metadata;
+        match std::fs::metadata(file_path) {
+            Ok(metadata) => {
+                file_metadata = metadata;
+            }
+
+            Err(error) => {
+                println!("[ERROR] Could not retrieve \"{}\"'s metadata: {}", file_path.display(), error);
+                continue;
+            }
+        }
+
+        // skip directories
+        if file_metadata.is_dir() {
+            println!("[INFO] Skipping directory \"{}\"...", file_path.display());
+            continue;
+        }
+
+        println!("[INFO] Working with \"{}\"...", file_path.display());
+
+        let mut file_contents: Vec<u8> = Vec::with_capacity(file_metadata.len() as usize);
+        let mut file_handle: std::fs::File;
+        match std::fs::File::open(file_path) {
+            Ok(f_handle) => {
+                file_handle = f_handle;
+            }
+            Err(error) => {
+                println!("[ERROR] Could not open \"{}\": {}", file_path.display(), error);
+                continue;
+            }
+        }
+
+        match file_handle.read_to_end(&mut file_contents) {
+            Ok(_) => {}
+            Err(error) => {
+                println!("[ERROR] Error reading \"{}\": {}", file_path.display(), error);
+            }
+        }
+
+        let mut positions: Vec<Position> = Vec::new();
+        let mut cursor_index: usize = 0;
+        while (cursor_index as u64) < file_metadata.len() {
+            match rip_png(&file_contents, cursor_index) {
+                Some(pos) => {
+                    cursor_index = pos.end;
+                    positions.push(pos);
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+
+        let file_name: String;
+        match file_path.file_name() {
+            Some(fname) => {
+                file_name = String::from(fname.to_string_lossy());
+            }
+
+            None => {
+                eprintln!("[ERROR] Could not retrieve this file's name");
+                continue;
+            }
+        }
+
+        for position_index in 0..positions.len() {
+            let output_file_name: String = format!("{}_{}.png", file_name, position_index);
+            let mut output_file: std::fs::File;
+            match std::fs::File::create(destination_path.join(&output_file_name)) {
+                Ok(f) => {
+                    output_file = f;
+                }
+
+                Err(error) => {
+                    eprintln!("[ERROR] Error creating output file: {}", error);
+                    continue;
+                }
+            }
+
+            match output_file.write(&file_contents[positions[position_index].start..positions[position_index].end]) {
+                Ok(_) => {
+                    println!("[INFO] Outputted \"{}\"", output_file_name);
+                }
+
+                Err(error) => {
+                    eprintln!("[ERROR] Could not write PNG to the output file: {}", error);
+                    continue;
+                }
+            }
+        }
     }
 
 }
